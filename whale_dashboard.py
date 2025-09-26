@@ -10,7 +10,6 @@ st.set_page_config(page_title="Whale Accumulation Strength Dashboard", layout="w
 # Helper: Safe timestamp conversion
 # --------------------------
 def convert_timestamp(series):
-    """Convert timestamps automatically (seconds or milliseconds)."""
     series = pd.to_numeric(series, errors='coerce')
     if series.max() > 1e12:
         return pd.to_datetime(series, unit="ms")
@@ -18,18 +17,22 @@ def convert_timestamp(series):
         return pd.to_datetime(series, unit="s")
 
 # --------------------------
-# Fetch daily OHLCV data from Bybit
+# Fetch daily OHLCV data from Bybit (robust)
 # --------------------------
 def get_daily_ohlcv(symbol='BTCUSDT', limit=30):
-    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=1440&limit={limit}"
-    res = requests.get(url).json()
-    if 'result' not in res or 'list' not in res['result']:
+    try:
+        url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=1440&limit={limit}"
+        res = requests.get(url, timeout=10).json()
+        if 'result' not in res or 'list' not in res['result'] or not res['result']['list']:
+            return None
+        data = res['result']['list']
+        df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','turnover'])
+        df['timestamp'] = convert_timestamp(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        return df[['open','high','low','close','volume']].astype(float)
+    except Exception as e:
+        st.error(f"{symbol}: Failed to fetch OHLCV ({e})")
         return None
-    data = res['result']['list']
-    df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','turnover'])
-    df['timestamp'] = convert_timestamp(df['timestamp'])
-    df.set_index('timestamp', inplace=True)
-    return df[['open','high','low','close','volume']].astype(float)
 
 # --------------------------
 # OBV calculation
@@ -66,13 +69,17 @@ def detect_accumulation(df, lookback=5):
 # Whale orderbook pressure
 # --------------------------
 def get_orderbook(symbol='BTCUSDT'):
-    url = f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={symbol}"
-    res = requests.get(url).json()
-    if 'result' not in res:
+    try:
+        url = f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={symbol}"
+        res = requests.get(url, timeout=10).json()
+        if 'result' not in res:
+            return None, None
+        bids = pd.DataFrame(res['result']['b'], columns=['price','size']).astype(float)
+        asks = pd.DataFrame(res['result']['a'], columns=['price','size']).astype(float)
+        return bids, asks
+    except Exception as e:
+        st.warning(f"{symbol}: Failed to fetch orderbook ({e})")
         return None, None
-    bids = pd.DataFrame(res['result']['b'], columns=['price','size']).astype(float)
-    asks = pd.DataFrame(res['result']['a'], columns=['price','size']).astype(float)
-    return bids, asks
 
 def get_whale_score(symbol):
     bids, asks = get_orderbook(symbol)
@@ -98,12 +105,18 @@ def plot_whale_pressure(symbol='BTCUSDT'):
     st.pyplot(fig)
 
 # --------------------------
-# Top 100 Bybit coins
+# Top 100 Bybit coins (only valid USDT pairs)
 # --------------------------
 def get_top_100_symbols():
-    url = "https://api.bybit.com/v5/market/tickers?category=linear"
-    res = requests.get(url).json()
-    return [item['symbol'] for item in res['result']['list'] if item['symbol'].endswith('USDT')][:100]
+    try:
+        url = "https://api.bybit.com/v5/market/tickers?category=linear"
+        res = requests.get(url, timeout=10).json()
+        if 'result' not in res or 'list' not in res['result']:
+            return []
+        return [item['symbol'] for item in res['result']['list'] if item['symbol'].endswith('USDT')][:100]
+    except Exception as e:
+        st.error(f"Failed to fetch top symbols ({e})")
+        return []
 
 # --------------------------
 # Streamlit UI
@@ -112,15 +125,18 @@ st.title("🐋 Whale Accumulation Strength Dashboard")
 st.markdown("Scan top Bybit coins for accumulation/distribution zones and rank them by whale support.")
 
 symbols = get_top_100_symbols()
-selected = st.multiselect("Select coins to scan", symbols, default=symbols[:10])
+if not symbols:
+    st.warning("No symbols available from Bybit API.")
+selected = st.multiselect("Select coins to scan", symbols, default=symbols[:10] if symbols else [])
+
 scan_button = st.button("🔍 Run Scan")
 
-if scan_button:
+if scan_button and selected:
     results = []
     for symbol in selected:
         st.subheader(f"Scanning {symbol}")
         df = get_daily_ohlcv(symbol)
-        if df is None or len(df) < 10:
+        if df is None or df.empty or len(df) < 5:
             st.warning(f"{symbol}: Data unavailable.")
             continue
         df = calculate_obv(df)
