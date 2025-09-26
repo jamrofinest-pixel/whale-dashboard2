@@ -4,10 +4,22 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import datetime
 
-# --- Page Settings ---
 st.set_page_config(page_title="Whale Accumulation Strength Dashboard", layout="wide")
 
-# 📦 Pull daily OHLCV from Bybit
+# --------------------------
+# Helper: Safe timestamp conversion
+# --------------------------
+def convert_timestamp(series):
+    """Convert timestamps automatically (seconds or milliseconds)."""
+    series = pd.to_numeric(series, errors='coerce')
+    if series.max() > 1e12:
+        return pd.to_datetime(series, unit="ms")
+    else:
+        return pd.to_datetime(series, unit="s")
+
+# --------------------------
+# Fetch daily OHLCV data from Bybit
+# --------------------------
 def get_daily_ohlcv(symbol='BTCUSDT', limit=30):
     url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=1440&limit={limit}"
     res = requests.get(url).json()
@@ -15,11 +27,13 @@ def get_daily_ohlcv(symbol='BTCUSDT', limit=30):
         return None
     data = res['result']['list']
     df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','turnover'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+    df['timestamp'] = convert_timestamp(df['timestamp'])
     df.set_index('timestamp', inplace=True)
     return df[['open','high','low','close','volume']].astype(float)
 
-# 📈 OBV calculation
+# --------------------------
+# OBV calculation
+# --------------------------
 def calculate_obv(df):
     obv = [0]
     for i in range(1, len(df)):
@@ -32,7 +46,9 @@ def calculate_obv(df):
     df['obv'] = obv
     return df
 
-# 🔍 Accumulation/Distribution detection
+# --------------------------
+# Accumulation / Distribution detection
+# --------------------------
 def detect_accumulation(df, lookback=5):
     recent = df.tail(lookback)
     price_change = recent['close'].pct_change().sum()
@@ -46,7 +62,9 @@ def detect_accumulation(df, lookback=5):
     else:
         return None
 
-# 🐋 Whale pressure from Bybit
+# --------------------------
+# Whale orderbook pressure
+# --------------------------
 def get_orderbook(symbol='BTCUSDT'):
     url = f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={symbol}"
     res = requests.get(url).json()
@@ -79,13 +97,17 @@ def plot_whale_pressure(symbol='BTCUSDT'):
     ax.grid(True)
     st.pyplot(fig)
 
-# 🗂 Get top 100 Bybit coins
+# --------------------------
+# Top 100 Bybit coins
+# --------------------------
 def get_top_100_symbols():
     url = "https://api.bybit.com/v5/market/tickers?category=linear"
     res = requests.get(url).json()
     return [item['symbol'] for item in res['result']['list'] if item['symbol'].endswith('USDT')][:100]
 
-# 🧠 Streamlit UI
+# --------------------------
+# Streamlit UI
+# --------------------------
 st.title("🐋 Whale Accumulation Strength Dashboard")
 st.markdown("Scan top Bybit coins for accumulation/distribution zones and rank them by whale support.")
 
