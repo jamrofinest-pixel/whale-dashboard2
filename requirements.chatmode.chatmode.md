@@ -1,0 +1,6 @@
+streamlit==1.27.0
+pandas==2.1.1
+matplotlib==3.7.2
+pillow==9.4.0
+requests==2.31.0
+numpy==1.26.4
