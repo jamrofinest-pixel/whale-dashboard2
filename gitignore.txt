@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+*.env
+
+# System files
+.DS_Store
+Thumbs.db
+AppData/
+NTUSER.DAT
+*.log
+
+# IDEs
+.vscode/
+.idea/
