@@ -1,10 +1,10 @@
 # whale_dashboard.py
-import streamlit as st
-import requests
-import pandas as pd
-import matplotlib.pyplot as plt
+import streamlit as st # type: ignore
+import requests # type: ignore
+import pandas as pd # type: ignore
+import matplotlib.pyplot as plt # type: ignore
 import datetime
-import numpy as np
+import numpy as np # type: ignore
 from typing import Tuple, List
 
 st.set_page_config(page_title="🐋 Whale Dashboard", layout="wide")
